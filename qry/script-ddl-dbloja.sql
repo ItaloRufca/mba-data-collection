@@ -1,65 +1,79 @@
+-- SEÇÃO 1: LIMPEZA DO AMBIENTE
 --
--- 1. Limpeza das tabelas e schema existentes
 --
 DROP TABLE IF EXISTS db_loja.pedido_itens, db_loja.pedido_cabecalho, db_loja.produtos, db_loja.categorias_produtos, db_loja.clientes CASCADE;
 DROP SCHEMA IF EXISTS db_loja;
 
+
 --
--- 1. Criação do Schema 'db_loja'
+-- SEÇÃO 2: CRIAÇÃO DO SCHEMA
+--
+-- Um schema é como uma pasta dentro do banco de dados, usado para organizar as tabelas e outros objetos.
+-- Isso evita conflitos de nomes e melhora a organização.
 --
 CREATE SCHEMA IF NOT EXISTS db_loja;
 
 --
--- 3. Estrutura das Tabelas com a Nova Nomenclatura
+-- SEÇÃO 3: ESTRUTURA DAS TABELAS (CREATE TABLE)
+--
+-- Aqui definimos a estrutura de cada tabela, suas colunas, tipos de dados e restrições.
 --
 
 -- Tabela: categorias_produtos
+-- Armazena as categorias às quais os produtos podem pertencer.
 CREATE TABLE db_loja.categorias_produtos (
-    id INTEGER PRIMARY KEY,
-    nome VARCHAR(100) NOT NULL UNIQUE,
-    descricao TEXT
+    id INTEGER PRIMARY KEY,                 -- Chave primária: identificador único da categoria.
+    nome VARCHAR(100) NOT NULL UNIQUE,      -- Nome da categoria, não pode ser nulo e deve ser único.
+    descricao TEXT                          -- Descrição opcional da categoria.
 );
 
 -- Tabela: produtos
+-- Contém todos os produtos da loja.
 CREATE TABLE db_loja.produtos (
-    id INTEGER PRIMARY KEY,
-    nome VARCHAR(255) NOT NULL,
-    descricao TEXT,
-    preco NUMERIC(10, 2) NOT NULL,
-    estoque INT NOT NULL DEFAULT 0,
-    id_categoria INT,
-    CONSTRAINT fk_categoria
-        FOREIGN KEY(id_categoria)
-        REFERENCES db_loja.categorias_produtos(id)
+    id INTEGER PRIMARY KEY,                 -- Chave primária: identificador único do produto.
+    nome VARCHAR(255) NOT NULL,             -- Nome do produto, não pode ser nulo.
+    descricao TEXT,                         -- Descrição detalhada do produto.
+    preco NUMERIC(10, 2) NOT NULL,          -- Preço do produto com precisão de 2 casas decimais.
+    estoque INT NOT NULL DEFAULT 0,         -- Quantidade em estoque, com valor padrão 0.
+    id_categoria INT,                       -- Chave estrangeira que se conecta à tabela 'categorias_produtos'.
+    data_criacao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,     -- Registra o momento exato da criação do produto. Preenchido automaticamente no INSERT.
+    data_atualizacao TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Registra a última modificação do produto. Será atualizado automaticamente pelo Trigger.
+   CONSTRAINT fk_categoria                 -- Nome da restrição.
+        FOREIGN KEY(id_categoria)           -- Coluna nesta tabela.
+        REFERENCES db_loja.categorias_produtos(id) -- Tabela e coluna referenciadas.
 );
 
 -- Tabela: clientes
+-- Armazena os dados dos clientes cadastrados.
 CREATE TABLE db_loja.clientes (
-    id INTEGER PRIMARY KEY,
-    nome VARCHAR(150) NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    telefone VARCHAR(20),
-    data_cadastro TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    id INTEGER PRIMARY KEY,                 -- Chave primária: identificador único do cliente.
+    nome VARCHAR(150) NOT NULL,             -- Nome do cliente.
+    email VARCHAR(255) UNIQUE NOT NULL,     -- Email do cliente, deve ser único.
+    telefone VARCHAR(20),                   -- Telefone de contato.
+    data_cadastro TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, -- Data de cadastro, preenchida automaticamente.
+    is_date BOOLEAN DEFAULT FALSE NOT NULL -- Marcação se o registro foi excluído.
 );
 
 -- Tabela: pedido_cabecalho
+-- Armazena as informações gerais de cada pedido.
 CREATE TABLE db_loja.pedido_cabecalho (
-    id INTEGER PRIMARY KEY,
-    id_cliente INT NOT NULL,
-    data_pedido TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    valor_total NUMERIC(10, 2) NOT NULL,
+    id INTEGER PRIMARY KEY,                 -- Chave primária: identificador único do pedido.
+    id_cliente INT NOT NULL,                -- Chave estrangeira para a tabela 'clientes'.
+    data_pedido TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, -- Data em que o pedido foi realizado.
+    valor_total NUMERIC(10, 2) NOT NULL,    -- Valor total do pedido.
     CONSTRAINT fk_cliente
         FOREIGN KEY(id_cliente)
         REFERENCES db_loja.clientes(id)
 );
 
 -- Tabela: pedido_itens
+-- Detalha os produtos contidos em cada pedido. Uma linha para cada produto em um pedido.
 CREATE TABLE db_loja.pedido_itens (
-    id INTEGER PRIMARY KEY,
-    id_pedido INT NOT NULL,
-    id_produto INT NOT NULL,
-    quantidade INT NOT NULL,
-    preco_unitario NUMERIC(10, 2) NOT NULL,
+    id INTEGER PRIMARY KEY,                 -- Chave primária: identificador único do item do pedido.
+    id_pedido INT NOT NULL,                 -- Chave estrangeira para 'pedido_cabecalho'.
+    id_produto INT NOT NULL,                -- Chave estrangeira para 'produtos'.
+    quantidade INT NOT NULL,                -- Quantidade comprada do produto.
+    preco_unitario NUMERIC(10, 2) NOT NULL, -- Preço do produto no momento da compra.
     CONSTRAINT fk_pedido
         FOREIGN KEY(id_pedido)
         REFERENCES db_loja.pedido_cabecalho(id),
@@ -68,13 +82,44 @@ CREATE TABLE db_loja.pedido_itens (
         REFERENCES db_loja.produtos(id)
 );
 
+
 --
--- 4. Inserção de Dados de Exemplo com IDs Fixos
+-- SEÇÃO 4: AUTOMAÇÃO DE TIMESTAMP (FUNÇÃO E TRIGGER)
+--
+-- Esta seção cria a lógica para atualizar automaticamente o campo 'data_atualizacao' na tabela 'produtos'.
 --
 
--- Inserir Categorias de Produtos (IDs 1-10)
+-- 4.1. FUNÇÃO DO TRIGGER:
+-- Esta função define a AÇÃO que o trigger irá executar.
+-- Sua única responsabilidade é atualizar o campo 'data_atualizacao' para o horário atual (NOW()).
+CREATE OR REPLACE FUNCTION db_loja.atualizar_data_atualizacao_trigger()
+RETURNS TRIGGER AS $$
+BEGIN
+   -- A variável especial 'NEW' representa a linha que está sendo inserida ou atualizada.
+   -- Aqui, estamos modificando o valor do campo 'data_atualizacao' dessa linha.
+   NEW.data_atualizacao = NOW();
+   
+   -- Retorna a linha modificada para que a operação de UPDATE possa continuar normalmente.
+   RETURN NEW;
+END;
+$$ LANGUAGE plpgsql; -- Define a linguagem da função como PL/pgSQL, padrão do PostgreSQL.
+
+-- 4.2. CRIAÇÃO DO TRIGGER (GATILHO):
+-- Este é o "gatilho" que efetivamente monitora a tabela 'produtos'.
+CREATE TRIGGER trigger_produtos_atualizacao
+BEFORE UPDATE ON db_loja.produtos              -- Dispara ANTES de qualquer comando UPDATE na tabela 'produtos'.
+FOR EACH ROW                                   -- A ação será executada para cada linha individual que for atualizada.
+EXECUTE FUNCTION db_loja.atualizar_data_atualizacao_trigger(); -- Executa a função que criamos acima.
+
+
+--
+-- SEÇÃO 5: INSERÇÃO DE DADOS DE EXEMPLO (INSERT)
+--
+-- Agora que a estrutura está pronta, populamos as tabelas com dados de exemplo.
+--
+
+-- Inserindo dados na tabela de categorias
 INSERT INTO db_loja.categorias_produtos (id, nome, descricao) values
---(33, 'Informatica', 'Informatica e etc');
 (1, 'Eletrônicos', 'Dispositivos eletrônicos e acessórios.'),
 (2, 'Livros', 'Livros de diversos gêneros e autores.'),
 (3, 'Roupas', 'Vestuário masculino, feminino e infantil.'),
@@ -86,7 +131,8 @@ INSERT INTO db_loja.categorias_produtos (id, nome, descricao) values
 (9, 'Automotivo', 'Acessórios e peças para veículos.'),
 (10, 'Jardinagem', 'Ferramentas e suprimentos para jardinagem.');
 
--- Inserir Produtos (IDs 1-20)
+-- Inserindo dados na tabela de produtos
+-- Note que não precisamos informar 'data_criacao' e 'data_atualizacao', pois elas são preenchidas automaticamente.
 INSERT INTO db_loja.produtos (id, nome, descricao, preco, estoque, id_categoria) VALUES
 (1, 'Smartphone X', 'Smartphone de última geração com 128GB.', 2999.90, 50, 1),
 (2, 'Notebook Pro', 'Notebook com processador i7, 16GB RAM.', 7499.50, 30, 1),
@@ -109,7 +155,7 @@ INSERT INTO db_loja.produtos (id, nome, descricao, preco, estoque, id_categoria)
 (19, 'Jogo de Chaves de Fenda', 'Com 6 peças de diferentes tamanhos.', 89.90, 150, 8),
 (20, 'Calça Jeans Slim', 'Jeans com elastano para maior conforto.', 149.90, 180, 3);
 
--- Inserir Clientes (IDs 1-12)
+-- Inserindo dados na tabela de clientes
 INSERT INTO db_loja.clientes (id, nome, email, telefone) VALUES
 (1, 'João Silva', 'joao.silva@example.com', '(21) 98765-4321'),
 (2, 'Maria Oliveira', 'maria.oliveira@example.com', '(11) 91234-5678'),
@@ -126,7 +172,9 @@ INSERT INTO db_loja.clientes (id, nome, email, telefone) VALUES
 
 
 --
--- 5. Simulação de 100 Pedidos
+-- SEÇÃO 6: SIMULAÇÃO DE PEDIDOS
+--
+-- Inserindo dados de pedidos (cabeçalho e itens) para simular o funcionamento da loja.
 --
 
 -- Pedidos 1-10
